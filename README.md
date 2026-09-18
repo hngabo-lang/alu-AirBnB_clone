@@ -349,14 +349,8 @@ e952b772-80a5-41e9-b728-6bc4dc5c21b4
 ## Authors
 
 <details>
-    <summary>Blessing Hirwa</summary>
+    <summary>Aristote Henry Ngabo</summary>
     <ul>
-    <li><a href="https://github.com/hirwaalu">Github</a></li>
-    </ul>
-</details>
-<details>
-    <summary>Ephraim Mulilo</summary>
-    <ul>
-    <li><a href="https://github.com/mulilo">Ephraim Mulilo</a></li>
-    </ul>
+    <li><a "https://github.com/hngabo-lang">Github</a></li>
+    </ul>https://github.com/hngabo-lang
 </details>
