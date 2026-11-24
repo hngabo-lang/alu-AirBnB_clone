@@ -1,13 +1,9 @@
 #!/usr/bin/python3
-"""Defines the State class."""
+"""Define the State model."""
 from models.base_model import BaseModel
 
 
 class State(BaseModel):
-    """Represent a state.
-
-    Attributes:
-        name (str): The name of the state.
-    """
+    """Represent a state in the AirBnB clone."""
 
     name = ""

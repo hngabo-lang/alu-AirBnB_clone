@@ -5,7 +5,6 @@
     border: 1px solid #DDDDDD;
     border-radius: 4px;
     display: flex;
-    justify-content: flex-end;
     align-items: center;
 }
 
@@ -25,26 +24,28 @@
     opacity: 0.9;
 }
 
-.filters .locations{
-    height: 100%;
-    width: 25%;
-    border-right: #DDDDDD solid 1px;
-    margin-left: 30px;
-}
-
+.filters .locations,
 .filters .amenities {
     height: 100%;
     width: 25%;
-    margin-left: 30px;
+    box-sizing: border-box;
+    padding-left: 30px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
 }
 
-.filters locations .filters amenities h3 {
+.filters .locations {
+    border-right: 1px solid #DDDDDD;
+}
+
+.filters h3 {
     font-weight: 600;
-    margin-bottom: 0px;
+    margin: 0;
 }
 
-h4 {
+.filters h4 {
     font-weight: 400;
     font-size: 14px;
-    margin-top: 0px;
+    margin: 0;
 }

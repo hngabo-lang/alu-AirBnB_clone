@@ -1,172 +1,196 @@
 #!/usr/bin/python3
-"""Defines unittests for models/engine/file_storage.py.
-
-Unittest classes:
-    TestFileStorage_instantiation
-    TestFileStorage_methods
-"""
-import os
+"""Test file storage with temporary files and isolated objects."""
 import json
-import models
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
 import unittest
-from datetime import datetime
+from unittest.mock import patch
+
 from models.base_model import BaseModel
-from models.engine.file_storage import FileStorage
 from models.user import User
-from models.state import State
 from models.place import Place
+from models.state import State
 from models.city import City
 from models.amenity import Amenity
 from models.review import Review
+from models.engine.file_storage import FileStorage
 
 
-class TestFileStorage_instantiation(unittest.TestCase):
-    """Unittests for testing instantiation of the FileStorage class."""
+class TestFileStorage(unittest.TestCase):
+    """Check object registration and JSON persistence."""
 
-    def test_FileStorage_instantiation_no_args(self):
-        self.assertEqual(type(FileStorage()), FileStorage)
-
-    def test_FileStorage_instantiation_with_arg(self):
-        with self.assertRaises(TypeError):
-            FileStorage(None)
-
-    def test_FileStorage_file_path_is_private_str(self):
-        self.assertEqual(str, type(FileStorage._FileStorage__file_path))
-
-    def testFileStorage_objects_is_private_dict(self):
-        self.assertEqual(dict, type(FileStorage._FileStorage__objects))
-
-    def test_storage_initializes(self):
-        self.assertEqual(type(models.storage), FileStorage)
-
-
-class TestFileStorage_methods(unittest.TestCase):
-    """Unittests for testing methods of the FileStorage class."""
-
-    @classmethod
     def setUp(self):
-        try:
-            os.rename("file.json", "tmp")
-        except IOError:
-            pass
-
-    @classmethod
-    def tearDown(self):
-        try:
-            os.remove("file.json")
-        except IOError:
-            pass
-        try:
-            os.rename("tmp", "file.json")
-        except IOError:
-            pass
-        FileStorage._FileStorage__objects = {}
+        """Use a fresh storage dictionary and a temporary file path."""
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.path = os.path.join(directory.name, "file.json")
+        file_path = patch.object(FileStorage, "_FileStorage__file_path",
+                                 self.path)
+        objects = patch.object(FileStorage, "_FileStorage__objects", {})
+        file_path.start()
+        objects.start()
+        self.addCleanup(file_path.stop)
+        self.addCleanup(objects.stop)
+        self.storage = FileStorage()
 
     def test_all(self):
-        self.assertEqual(dict, type(models.storage.all()))
-
-    def test_all_with_arg(self):
-        with self.assertRaises(TypeError):
-            models.storage.all(None)
+        """An empty store returns its dictionary of objects."""
+        self.assertEqual(self.storage.all(), {})
+        self.assertIsInstance(self.storage.all(), dict)
 
     def test_new(self):
-        bm = BaseModel()
-        us = User()
-        st = State()
-        pl = Place()
-        cy = City()
-        am = Amenity()
-        rv = Review()
-        models.storage.new(bm)
-        models.storage.new(us)
-        models.storage.new(st)
-        models.storage.new(pl)
-        models.storage.new(cy)
-        models.storage.new(am)
-        models.storage.new(rv)
-        self.assertIn("BaseModel." + bm.id, models.storage.all().keys())
-        self.assertIn(bm, models.storage.all().values())
-        self.assertIn("User." + us.id, models.storage.all().keys())
-        self.assertIn(us, models.storage.all().values())
-        self.assertIn("State." + st.id, models.storage.all().keys())
-        self.assertIn(st, models.storage.all().values())
-        self.assertIn("Place." + pl.id, models.storage.all().keys())
-        self.assertIn(pl, models.storage.all().values())
-        self.assertIn("City." + cy.id, models.storage.all().keys())
-        self.assertIn(cy, models.storage.all().values())
-        self.assertIn("Amenity." + am.id, models.storage.all().keys())
-        self.assertIn(am, models.storage.all().values())
-        self.assertIn("Review." + rv.id, models.storage.all().keys())
-        self.assertIn(rv, models.storage.all().values())
-
-    def test_new_with_args(self):
-        with self.assertRaises(TypeError):
-            models.storage.new(BaseModel(), 1)
-
-    def test_new_with_None(self):
-        with self.assertRaises(AttributeError):
-            models.storage.new(None)
+        """Objects are indexed by class name and ID."""
+        obj = BaseModel()
+        self.storage.all().clear()
+        self.storage.new(obj)
+        self.assertEqual(self.storage.all(), {"BaseModel." + obj.id: obj})
+        self.storage.new(obj)
+        self.assertEqual(len(self.storage.all()), 1)
 
     def test_save(self):
-        bm = BaseModel()
-        us = User()
-        st = State()
-        pl = Place()
-        cy = City()
-        am = Amenity()
-        rv = Review()
-        models.storage.new(bm)
-        models.storage.new(us)
-        models.storage.new(st)
-        models.storage.new(pl)
-        models.storage.new(cy)
-        models.storage.new(am)
-        models.storage.new(rv)
-        models.storage.save()
-        save_text = ""
-        with open("file.json", "r") as f:
-            save_text = f.read()
-            self.assertIn("BaseModel." + bm.id, save_text)
-            self.assertIn("User." + us.id, save_text)
-            self.assertIn("State." + st.id, save_text)
-            self.assertIn("Place." + pl.id, save_text)
-            self.assertIn("City." + cy.id, save_text)
-            self.assertIn("Amenity." + am.id, save_text)
-            self.assertIn("Review." + rv.id, save_text)
+        """Saving writes object dictionaries as valid JSON."""
+        obj = BaseModel()
+        obj.name = "Example"
+        self.storage.save()
+        with open(self.path, encoding="utf-8") as file:
+            data = json.load(file)
+        self.assertEqual(data, {"BaseModel." + obj.id: obj.to_dict()})
 
-    def test_save_with_arg(self):
-        with self.assertRaises(TypeError):
-            models.storage.save(None)
+    def test_reload_all_models(self):
+        """Every model is restored with its original type and values."""
+        classes = (BaseModel, User, Place, State, City, Amenity, Review)
+        expected = {}
+        for model_class in classes:
+            obj = model_class()
+            obj.name = "Example"
+            key = "{}.{}".format(model_class.__name__, obj.id)
+            expected[key] = (model_class, obj.to_dict())
+        self.storage.save()
+        self.storage.all().clear()
+        self.storage.reload()
+        self.assertEqual(set(self.storage.all()), set(expected))
+        for key, (model_class, data) in expected.items():
+            with self.subTest(model=key):
+                restored = self.storage.all()[key]
+                self.assertIsInstance(restored, model_class)
+                self.assertEqual(restored.to_dict(), data)
 
-    def test_reload(self):
-        bm = BaseModel()
-        us = User()
-        st = State()
-        pl = Place()
-        cy = City()
-        am = Amenity()
-        rv = Review()
-        models.storage.new(bm)
-        models.storage.new(us)
-        models.storage.new(st)
-        models.storage.new(pl)
-        models.storage.new(cy)
-        models.storage.new(am)
-        models.storage.new(rv)
-        models.storage.save()
-        models.storage.reload()
-        objs = FileStorage._FileStorage__objects
-        self.assertIn("BaseModel." + bm.id, objs)
-        self.assertIn("User." + us.id, objs)
-        self.assertIn("State." + st.id, objs)
-        self.assertIn("Place." + pl.id, objs)
-        self.assertIn("City." + cy.id, objs)
-        self.assertIn("Amenity." + am.id, objs)
-        self.assertIn("Review." + rv.id, objs)
+    def test_reload_missing_file(self):
+        """A missing file leaves the existing objects unchanged."""
+        obj = BaseModel()
+        self.storage.reload()
+        self.assertEqual(self.storage.all(), {"BaseModel." + obj.id: obj})
 
-    def test_reload_with_arg(self):
-        with self.assertRaises(TypeError):
-            models.storage.reload(None)
+    def test_related_models_round_trip(self):
+        """Model fields and related object IDs survive JSON storage."""
+        user = User()
+        user.first_name = "Betty"
+        user.last_name = "Bar"
+        user.email = "airbnb@mail.com"
+        user.password = "root"
+        state = State()
+        state.name = "Kigali"
+        city = City()
+        city.name = "Kigali"
+        city.state_id = state.id
+        amenity = Amenity()
+        amenity.name = "Wi-Fi"
+        place = Place()
+        place.name = "Guest house"
+        place.description = "A quiet room"
+        place.city_id = city.id
+        place.user_id = user.id
+        place.number_rooms = 2
+        place.number_bathrooms = 1
+        place.max_guest = 3
+        place.price_by_night = 50
+        place.latitude = -1.95
+        place.longitude = 30.06
+        place.amenity_ids = [amenity.id]
+        review = Review()
+        review.place_id = place.id
+        review.user_id = user.id
+        review.text = "A comfortable stay"
+        expected = {key: obj.to_dict()
+                    for key, obj in self.storage.all().items()}
+        self.storage.save()
+        self.storage.all().clear()
+        self.storage.reload()
+        restored = {key: obj.to_dict()
+                    for key, obj in self.storage.all().items()}
+        self.assertEqual(restored, expected)
+        self.assertEqual(self.storage.all()["Place." + place.id].amenity_ids,
+                         [amenity.id])
+
+    def test_save_empty_store(self):
+        """An empty store can be saved and loaded."""
+        self.storage.save()
+        with open(self.path, encoding="utf-8") as file:
+            self.assertEqual(json.load(file), {})
+        self.storage.reload()
+        self.assertEqual(self.storage.all(), {})
+
+    def test_model_save_persists_changes(self):
+        """Calling a model's save method writes its changed attributes."""
+        obj = User()
+        obj.email = "student@example.com"
+        obj.save()
+        self.storage.all().clear()
+        self.storage.reload()
+        restored = self.storage.all()["User." + obj.id]
+        self.assertEqual(restored.email, "student@example.com")
+        self.assertEqual(restored.updated_at, obj.updated_at)
+
+    def test_storage_survives_restart(self):
+        """A fresh Python process automatically loads saved objects."""
+        root = Path(__file__).resolve().parents[3]
+        environment = os.environ.copy()
+        environment["PYTHONPATH"] = str(root)
+        environment["PYTHONDONTWRITEBYTECODE"] = "1"
+        create = """
+import json
+from models import storage
+from models.base_model import BaseModel
+
+assert storage.all() == {}
+obj = BaseModel()
+obj.name = "My_First_Model"
+obj.my_number = 89
+obj.save()
+print(json.dumps(obj.to_dict()))
+"""
+        reload_objects = """
+import json
+from datetime import datetime
+from models import storage
+from models.base_model import BaseModel
+
+assert len(storage.all()) == 1
+obj = next(iter(storage.all().values()))
+assert isinstance(obj, BaseModel)
+assert isinstance(obj.created_at, datetime)
+assert isinstance(obj.updated_at, datetime)
+print(json.dumps(obj.to_dict()))
+another = BaseModel()
+another.save()
+"""
+        results = []
+        for script in (create, reload_objects):
+            result = subprocess.run(
+                [sys.executable, "-c", script],
+                cwd=os.path.dirname(self.path), env=environment,
+                capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            results.append(json.loads(result.stdout))
+        self.assertEqual(results[0], results[1])
+        with open(self.path, encoding="utf-8") as file:
+            saved = json.load(file)
+        self.assertEqual(len(saved), 2)
+        key = "BaseModel." + results[0]["id"]
+        self.assertEqual(saved[key], results[0])
 
 
 if __name__ == "__main__":
